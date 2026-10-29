@@ -171,7 +171,7 @@ Completed as part of a deep learning lab focused on image classification and tra
 
 
 
-# Malaria Detection from Blood-Cell Images
+# Week-6  Malaria Detection from Blood-Cell Images
 
 Transfer learning with **ResNet-18** to classify single blood cells as **Parasitized** or **Uninfected**, evaluated with a **patient-level split** to avoid data leakage.
 
