@@ -168,3 +168,201 @@ Bachelor's in Electronics
 ## Acknowledgment
 
 Completed as part of a deep learning lab focused on image classification and transfer learning.
+
+
+
+# Malaria Detection from Blood-Cell Images
+
+Transfer learning with **ResNet-18** to classify single blood cells as **Parasitized** or **Uninfected**, evaluated with a **patient-level split** to avoid data leakage.
+
+![Python](https://img.shields.io/badge/Python-3.x-blue)
+![PyTorch](https://img.shields.io/badge/PyTorch-ResNet--18-orange)
+![Platform](https://img.shields.io/badge/Platform-Kaggle%20(GPU)-20BEFF)
+![Task](https://img.shields.io/badge/Task-Binary%20Image%20Classification-green)
+
+> **Course:** Introduction to Applied AI | **Project 2:** Deep Learning Applications | **Week 6**
+> **Author:** [Anderia Nisar]
+
+---
+
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Results at a Glance](#results-at-a-glance)
+3. [Dataset](#dataset)
+4. [Method](#method)
+5. [Detailed Results](#detailed-results)
+6. [Explainability (Grad-CAM)](#explainability-grad-cam)
+7. [Repository Contents](#repository-contents)
+
+---
+
+## Overview
+
+Malaria is diagnosed in the field by examining blood smears under a microscope, which is slow and depends on the skill of the person counting. This project trains a deep-learning classifier that looks at a single segmented red blood cell and decides whether it contains a malaria parasite.
+
+The focus is not only on accuracy but on **trustworthy evaluation**:
+
+- **Patient-level split:** the 27,558 images come from only 200 patients (about 138 cells each), so a random split would leak patient and slide information into the test set. All splits are grouped by patient id.
+- **Leakage audit:** exact duplicates (MD5) and near-duplicates (image fingerprints) were checked before training.
+- **Recall-oriented threshold:** the decision threshold was chosen on validation data to reach at least 95% recall for the Parasitized class, then applied once to the test set.
+- **Prevalence-aware reporting:** PPV is reported at the test prevalence and recomputed for 5% and 1% prevalence.
+- **Shortcut check:** Grad-CAM was used to test whether the model looks at the cell or at the black background.
+
+## Results at a Glance
+
+| Metric (test set, 3,335 cells from 28 unseen patients) | Value |
+|---|---|
+| Accuracy (threshold 0.5) | 0.970 |
+| Macro-F1 (threshold 0.5) | 0.969 |
+| AUC | 0.994 |
+| Sensitivity at threshold 0.160 | 0.982 |
+| Specificity at threshold 0.160 | 0.941 |
+| PPV at test prevalence (40.2%) | 0.918 |
+| PPV at 5% prevalence | 0.468 |
+| PPV at 1% prevalence | 0.145 |
+
+## Dataset
+
+**Cell Images for Detecting Malaria** (NIH, hosted on Kaggle)
+
+- Kaggle: <https://www.kaggle.com/datasets/iarunava/cell-images-for-detecting-malaria>
+- Original source: <https://ceb.nlm.nih.gov/repositories/malaria-datasets/>
+
+| Property | Value |
+|---|---|
+| Total images | 27,558 |
+| Classes | Parasitized (13,779) and Uninfected (13,779) |
+| Colour mode | RGB |
+| Image size | width 61 to 229 px, height 82 to 187 px (median about 130 x 133) |
+| Patients | 200 (id taken from the file name, e.g. `C100P61ThinF_IMG_...` gives `C100`) |
+| Patient class mix | 150 patients with both classes, 50 with Uninfected only, 0 with Parasitized only |
+
+Expected folder layout (one sub-folder per class):
+
+```
+cell_images/
+├── Parasitized/
+└── Uninfected/
+```
+
+### Data splits
+
+| Split | Images | Patients | Parasitized | Uninfected |
+|---|---|---|---|---|
+| Train | 19,118 | 139 | 9,586 | 9,532 |
+| Validation | 5,105 | 33 | 2,853 | 2,252 |
+| Test | 3,335 | 28 | 1,340 | 1,995 |
+
+No patient appears in more than one split.
+
+## Method
+
+```
+Index files + patient ids
+        ↓
+Audit: exact duplicates (MD5) and near-duplicates (32x32 fingerprints)
+        ↓
+Patient-level split (StratifiedGroupKFold): train / validation / test
+        ↓
+Augmentation + ImageNet normalization, images preloaded in RAM
+        ↓
+Phase 1: train the new head only
+        ↓
+Phase 2: fine-tune layer4 + head
+        ↓
+Test evaluation, threshold chosen on validation, PPV vs prevalence
+        ↓
+Grad-CAM shortcut check, then export of the model
+```
+
+### Model
+
+ResNet-18 pretrained on ImageNet with a new 2-class linear head (11,177,538 parameters in total).
+
+| Phase | Trainable layers | Trainable parameters | Epochs | Learning rate | Best validation macro-F1 |
+|---|---|---|---|---|---|
+| 1 | Head only | 1,026 (0.009%) | 2 | 1e-3 | 0.866 |
+| 2 | `layer4` + head | 8,394,754 (75.1%) | 3 | 1e-4 (layer4), 1e-3 (head) | 0.937 |
+
+The best epoch of each phase is selected by **validation macro-F1**. The test set is used only once, at the end.
+
+### Training setup
+
+| Setting | Value |
+|---|---|
+| Input size | 224 x 224 |
+| Optimizer | Adam |
+| Batch size | 32 (training), 64 (evaluation) |
+| Loss | Cross-entropy with class weights 0.997 (Parasitized) and 1.003 (Uninfected) |
+| Augmentation | random resized crop (scale 0.8 to 1.0), rotation up to 10 degrees, horizontal and vertical flip, brightness and contrast jitter of 0.15 |
+| Normalization | ImageNet mean and standard deviation |
+| Random seed | 42 |
+
+Hue and saturation jitter is not used, because the purple stain of the parasite may be real evidence.
+
+## Detailed Results
+
+### Default threshold (0.5)
+
+| Class | Precision | Recall | F1 | Support |
+|---|---|---|---|---|
+| Parasitized | 0.963 | 0.962 | 0.963 | 1,340 |
+| Uninfected | 0.974 | 0.975 | 0.975 | 1,995 |
+
+| Confusion matrix | Predicted Parasitized | Predicted Uninfected |
+|---|---|---|
+| **True Parasitized** | 1,289 | 51 |
+| **True Uninfected** | 49 | 1,946 |
+
+### Recall-oriented threshold (0.160)
+
+The threshold was chosen on the validation set for recall of at least 0.95 (validation recall 0.950, specificity 0.936).
+
+| Threshold | Missed infections (FN) | False alarms (FP) |
+|---|---|---|
+| 0.5 (default) | 51 | 49 |
+| **0.160** | **24** | **117** |
+
+Test result at 0.160: TP 1,316, FN 24, TN 1,878, FP 117, giving sensitivity 0.982, specificity 0.941 and PPV 0.918.
+
+### PPV depends on prevalence
+
+PPV = (sens x prev) / (sens x prev + (1 - spec) x (1 - prev))
+
+| Prevalence | PPV |
+|---|---|
+| 40.2% (test set) | 0.918 |
+| 5% | 0.468 |
+| 1% | 0.145 |
+
+Sensitivity and specificity do not change with prevalence, but PPV falls sharply when infected cells are rare. In a real screening setting, more than half of the positive calls could be false alarms, so a positive result needs confirmation by a microscopist.
+
+## Explainability (Grad-CAM)
+
+Grad-CAM on the last convolutional block (`layer4`) was used to check for shortcuts, since stain colour and black padding vary from slide to slide.
+
+| Class | Background share of pixels | Background share of attention |
+|---|---|---|
+| Parasitized | 0.272 | 0.121 |
+| Uninfected | 0.262 | 0.163 |
+| Overall | 0.266 | 0.145 |
+
+**Findings**
+
+- The background gets less attention than its share of the pixels in both classes, which argues against a strong background shortcut.
+- Correct Parasitized predictions can focus tightly on a dark parasite spot.
+- Some maps peak near the cell edge, and the model made confident errors on odd-shaped cells, so the cell outline may act as a clue.
+
+**Verdict:** shortcut suspected (mild), not confirmed. A suggested follow-up is to paint the padding and the outer ring of each test cell with a fixed colour and re-score at the same threshold; a sharp drop in sensitivity or specificity would confirm reliance on the outline.
+
+## Repository Contents
+
+| File | Description |
+|---|---|
+| `week-6-malaria-detection-professional.ipynb` | Full notebook with code, outputs and written analysis |
+| `week6_model.pt` | Saved model (44.8 MB), created by the notebook in `/kaggle/working/` |
+| `train_df_md5.csv` | Backup of the image index with file sizes and MD5 hashes, created by the notebook |
+| `README.md` | This file |
+
+The checkpoint `week6_model.pt` contains five items: `state_dict`, `classes`, `backbone`, `img_size` and `grayscale`. The decision threshold **0.160 is not stored** in the file and must be applied separately.
