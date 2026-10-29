@@ -361,8 +361,16 @@ Grad-CAM on the last convolutional block (`layer4`) was used to check for shortc
 | File | Description |
 |---|---|
 | `week-6-malaria-detection-professional.ipynb` | Full notebook with code, outputs and written analysis |
-| `week6_model.pt` | Saved model (44.8 MB), created by the notebook in `/kaggle/working/` |
-| `train_df_md5.csv` | Backup of the image index with file sizes and MD5 hashes, created by the notebook |
+Saved model (44.8 MB), created by the notebook in `/kaggle/working
+Backup of the image index with file sizes and MD5 hashes, created by the notebook |
 | `README.md` | This file |
 
 The checkpoint `week6_model.pt` contains five items: `state_dict`, `classes`, `backbone`, `img_size` and `grayscale`. The decision threshold **0.160 is not stored** in the file and must be applied separately.
+## Limitations
+
+- **Not a diagnostic tool.** Positive results must be confirmed by a trained microscopist.
+- **Curated data.** The images are already segmented single cells on black padding. Real blood smears contain artefacts, overlapping cells and noise that are not present here.
+- **Small test set of patients.** The test set has 3,335 cells but only 28 patients, and the grouped split cannot force a balanced class mix (40.2% Parasitized in test against 55.9% in validation).
+- **Single run.** Results come from one split and one random seed, so no confidence intervals are reported.
+- **Possible shortcut.** The Grad-CAM check was done on six heatmaps and 300 attention scores, so the mild shortcut suspicion is neither confirmed nor ruled out.
+- **Prevalence.** PPV depends strongly on how common infected cells are; the reported 0.918 holds only at 40.2% prevalence.
