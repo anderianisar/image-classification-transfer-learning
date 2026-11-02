@@ -374,3 +374,177 @@ The checkpoint `week6_model.pt` contains five items: `state_dict`, `classes`, `b
 - **Single run.** Results come from one split and one random seed, so no confidence intervals are reported.
 - **Possible shortcut.** The Grad-CAM check was done on six heatmaps and 300 attention scores, so the mild shortcut suspicion is neither confirmed nor ruled out.
 - **Prevalence.** PPV depends strongly on how common infected cells are; the reported 0.918 holds only at 40.2% prevalence.
+
+# Week 7: Text and Multimodal AI
+### Malaria diagnosis support: blood-smear image + clinical text case review
+
+![Python](https://img.shields.io/badge/Python-3.13-blue)
+![spaCy](https://img.shields.io/badge/spaCy-3.8-09a3d5)
+![scikit-learn](https://img.shields.io/badge/scikit--learn-ML-orange)
+![PyTorch](https://img.shields.io/badge/PyTorch-ResNet--18-red)
+![Platform](https://img.shields.io/badge/Platform-Kaggle-20beff)
+
+A coursework project for **Introduction to Applied AI**. It builds a small text-processing pipeline and connects it to the **Week 6 blood-cell classifier** (`Parasitized` vs `Uninfected`), producing a privacy-safe **case record** that combines image evidence and clinical-note evidence for a human reviewer.
+
+> **Disclaimer.** This is an educational project. It is decision support only and is **not** a medical diagnosis tool. A qualified human makes every clinical decision.
+
+---
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Pipeline](#pipeline)
+- [What the Notebook Covers](#what-the-notebook-covers)
+- [Key Results](#key-results)
+- [Key Findings](#key-findings)
+- [Tech Stack](#tech-stack)
+- [Data and Model Sources](#data-and-model-sources)
+- [Getting Started](#getting-started)
+- [Project Structure](#project-structure)
+- [Limitations](#limitations)
+- [Privacy and Ethics](#privacy-and-ethics)
+- [Author](#author)
+
+---
+
+## Overview
+
+Each part of the notebook is **implemented, measured, then interpreted** using the output of the cell directly above the explanation. The emphasis is on honest evaluation: held-out data, negative tests and reading errors one by one, not only reporting averages.
+
+## Pipeline
+
+```
+ blood-smear image ──► ResNet-18 (Week 6) ───────┐
+                                                 ├──► case record ──► REFER / ROUTINE ──► human review
+ clinical note ──► mask PII ──► spaCy + regex ───┘
+```
+
+## What the Notebook Covers
+
+| # | Part | Topic | Method |
+|---|---|---|---|
+| 1 | TF-IDF by hand | Rebuild one vectoriser row manually | NumPy |
+| 2 | Text classification | Spam detection with word vs character n-grams | TF-IDF + Logistic Regression |
+| 3 | Named Entity Recognition | Out-of-the-box vs rule-augmented, with a held-out set | spaCy + EntityRuler |
+| 4 | Regex fields | Fixed-format extraction with negative tests | `re` |
+| 5 | CER and OCR repair | Measuring OCR quality, fixing look-alike characters | Levenshtein, EasyOCR |
+| 6 | Image + text case record | Privacy-first record combining both evidence sources | ResNet-18 + spaCy + regex |
+| 7 | Check Your Understanding | Written answers with working | |
+
+## Key Results
+
+| Part | What was measured | Result |
+|---|---|---|
+| 1. TF-IDF | Hand reproduction of one row | 4 of 4 values match scikit-learn; cosine(d2, d3) = 0.544 |
+| 2. Spam | Macro-F1 on 1,115 test messages | Word 1-2 grams **0.974**, Character 2-5 grams **0.982** |
+| 3. NER | Provided 6-sentence set, F1 | 0.387 to **0.688** with entity rules |
+| 3. NER | Own domain, rule-writing set | 0.529 to 0.919 (optimistic) |
+| 3. NER | Own domain, **held-out** set | 0.556 to **0.778** (honest estimate) |
+| 4. Regex | 12 test cases (5 negative of my own) | **12 / 12** behaved as expected |
+| 5. OCR | Controlled error pairs, CER | 0.062, 0.062, 0.143 to **0.000** after repair |
+| 5. OCR | EasyOCR on a clean synthetic invoice | CER **0.000** |
+| 6. Case record | Parasitized image + fever note | **REFER**; phone and CNIC leak checks both **False** |
+| 6. Case record | Healthy image + urgent note | Still **REFER** (the note is the only reason) |
+
+### Spam classifier comparison
+
+| Metric (test set) | Word 1-2 grams | Char 2-5 grams |
+|---|---|---|
+| Features | 12,128 | 36,449 |
+| Macro-F1 | 0.974 | **0.982** |
+| Spam precision | 0.979 | **0.986** |
+| Spam recall | 0.933 | **0.953** |
+| Accuracy | 0.988 | **0.992** |
+
+## Key Findings
+
+1. **Accuracy can mislead.** With 13.4 % spam, an "always ham" model scores 86.6 %, so macro-F1 and per-class recall are used instead.
+2. **Models learn shortcuts.** Features such as `uk`, `to` and `your` describe the dataset, not spam. An ordinary Roman Urdu message was flagged as spam because it contained `call`, `free` and `mobile`.
+3. **Evaluate on held-out data.** The same NER rules gave +0.390 F1 on the sentences they were written from but only +0.222 on unseen ones.
+4. **Choose the tool for the error.** Regex for fixed formats, rules for closed boundary problems, trained models for open-ended names.
+5. **Negative tests matter.** Each deliberately sloppy regex passed positive examples and failed on text designed to attack it.
+6. **One OCR character can break a field.** `3O/09/2O26` is only 14 % wrong by CER but would not match the date regex, so repair before extraction.
+7. **Mask first, extract second.** Identifiers never reach the record, verified by searching the final JSON.
+8. **Fail towards referral.** Any single source of evidence is enough to refer a case, and disagreements stay visible to a human.
+
+## Tech Stack
+
+| Area | Libraries |
+|---|---|
+| Data | `numpy`, `pandas`, `matplotlib` |
+| Classical ML | `scikit-learn` (TF-IDF, Logistic Regression, metrics) |
+| NLP | `spaCy` 3.8 with `en_core_web_sm` |
+| OCR | `easyocr`, `Pillow` |
+| Deep learning | `torch`, `torchvision` (ResNet-18) |
+
+## Data and Model Sources
+
+| Resource | Used in | Notes |
+|---|---|---|
+| [SMS Spam Collection (UCI)](https://www.kaggle.com/datasets/uciml/sms-spam-collection-dataset) | Part 2 | 5,572 messages: 4,825 ham, 747 spam |
+| [Cell Images for Detecting Malaria](https://www.kaggle.com/datasets/iarunava/cell-images-for-detecting-malaria) | Part 6 | Folders `Parasitized` and `Uninfected` |
+| Week 6 checkpoint (ResNet-18, 224 x 224, RGB) | Part 6 | Own model from the previous lab; not included in this repository |
+
+The datasets and the model checkpoint are **not** stored in this repository. Add them as inputs in your Kaggle notebook, or download them separately.
+
+## Getting Started
+
+### Option 1: Kaggle (recommended)
+
+1. Upload `week-7-text-and-multimodal-AI-report.ipynb` to a new Kaggle notebook.
+2. Add the two datasets and your Week 6 checkpoint as **Inputs**.
+3. Turn **Internet On** in the notebook settings (EasyOCR downloads its model on first use).
+4. Run all cells in order.
+
+### Option 2: Local machine
+
+```bash
+git clone <your-repo-url>
+cd <your-repo-folder>
+
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+
+pip install numpy pandas matplotlib scikit-learn spacy pillow easyocr torch torchvision jupyter
+python -m spacy download en_core_web_sm
+
+jupyter notebook week-7-text-and-multimodal-AI-report.ipynb
+```
+
+> The notebook uses Kaggle paths such as `/kaggle/input/...`. When running locally, change those paths to where you stored the datasets and the checkpoint.
+
+## Project Structure
+
+```
+.
+├── week-7-text-and-multimodal-AI-report.ipynb   # full report: code, outputs, analysis
+└── README.md
+```
+
+## Limitations
+
+| Area | Limitation |
+|---|---|
+| Spam | One random split; English and UK-heavy data; some labels are wrong |
+| NER | Only 10 domain sentences (36 entities); one entity moves F1 by about 0.056 |
+| OCR | Tested on a clean synthetic image; real-scan CER is an expectation, not a result |
+| Image model | Trained on single-cell images from one public dataset; needs validation on local laboratory images |
+| Case record | Raw softmax confidence (not calibrated); no explicit conflict flag; entity list partly unreliable |
+
+### Possible next steps
+
+- Add a `conflict` field and calibrated probabilities to the case record.
+- Annotate a few hundred domain sentences and train a small NER model for names.
+- Measure CER on real, hand-transcribed laboratory reports.
+- Test a lower spam threshold on the full test set, not only on the errors.
+
+## Privacy and Ethics
+
+- All names, places, phone numbers, CNICs and amounts in the examples are **synthetic**.
+- Personal identifiers (CNIC, mobile, email) are masked **before** any entity or field extraction.
+- The output is **decision support, not a diagnosis**, and the final decision always stays with a qualified clinician.
+
+## Author
+
+**[Anderia Nisar]**
+Introduction to Applied AI, Week 7
