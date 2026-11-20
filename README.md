@@ -1,173 +1,126 @@
+# Image Classification with Transfer Learning
 
-# Image Classification Using ResNet-18 Transfer Learning
+**Project 2: Deep Learning Applications** | Introduction to Applied AI | Department of Electronics  
+Individual project by **Anderia Nisar**
 
-## Introduction
+This repository contains my Project 2 work: a CNN-based image classifier built with **PyTorch** and **transfer learning** on a pretrained **ResNet-18**. Week 5 builds the full pipeline on a benchmark scene dataset; Week 6 applies the same pipeline to a medical imaging problem (malaria detection).
 
-This project implements image classification using **ResNet-18 and Transfer Learning** on the Intel Image Classification dataset. The model classifies images into six scene categories: buildings, forest, glacier, mountain, sea, and street.
+---
 
-Two approaches are explored:
-- **Feature Extraction:** Freezing pretrained layers and training only the final classification layer.
-- **Fine-Tuning:** Training the `layer4` block along with the final classification layer.
+## Contents
 
-## Objectives
+| File | Description |
+|---|---|
+| `Week5_Transfer_Learning_Complete.ipynb` | Full Kaggle notebook: code, outputs, and written analysis for every part |
+| `resnet18_intel.pt` | Saved weights of the final model (44.8 MB) |
+| `images/` | Figures used in this README (learning curves, confusion matrix, error gallery) |
 
-- Understand transfer learning using a pretrained CNN.
-- Implement ResNet-18 for image classification.
-- Apply image preprocessing and data augmentation.
-- Compare feature extraction and fine-tuning.
-- Evaluate the model using accuracy, loss, precision, recall, and F1-score.
-- Visualize training curves, confusion matrix, and incorrectly classified images.
+---
 
-## Dataset
+## Week 5: Scene Classification with Transfer Learning
 
-**Dataset:** Intel Image Classification
+### Overview
+A ResNet-18 pretrained on ImageNet (1.2 million images) is adapted to recognise **6 scene classes**: buildings, forest, glacier, mountain, sea, and street. The work follows a staged approach: understand the data and a convolution by hand, build clean data pipelines, train only a new classifier head (feature extraction), then fine-tune the last residual block, and finally evaluate once on the test set and study the errors.
 
-The dataset contains six classes:
+### Dataset
+**Intel Image Classification** (Kaggle, 6 classes, 150 × 150 RGB images)
 
-1. Buildings
-2. Forest
-3. Glacier
-4. Mountain
-5. Sea
-6. Street
+| Split | Images | Notes |
+|---|---|---|
+| Train | 11,929 | 85% of the original training folder, **augmented** (random resized crop, horizontal flip, mild colour jitter) |
+| Validation | 2,105 | 15% of the original training folder, clean (resize + normalise only) |
+| Test | 3,000 | Original `seg_test` folder, clean, **used only once** |
 
-### Dataset Structure
+All images are resized to 224 × 224 and normalised with the ImageNet mean and standard deviation, which the pretrained weights expect.
 
-```text
-image-classification/
-├── seg_train/
-│   └── seg_train/
-│       ├── buildings/
-│       ├── forest/
-│       ├── glacier/
-│       ├── mountain/
-│       ├── sea/
-│       └── street/
-├── seg_test/
-│   └── seg_test/
-│       ├── buildings/
-│       ├── forest/
-│       ├── glacier/
-│       ├── mountain/
-│       ├── sea/
-│       └── street/
-└── seg_pred/
-    └── seg_pred/
-```
+### Method
 
-The training dataset is divided into training and validation sets. The test dataset is used for final evaluation.
+| Stage | What was trained | Epochs | Learning rate | Best validation accuracy |
+|---|---|---|---|---|
+| 1. Feature extraction | New 6-class head only (**3,078** parameters, 0.028% of 11.2M) | 3 | 1e-3 | **0.901** |
+| 2. Fine-tuning | Head + `layer4` (**8,396,806** parameters) | 3 | 1e-4 (`layer4`), 1e-3 (head) | **0.931** |
 
-## Technologies Used
+Training uses Adam, cross-entropy loss, batch size 64, and keeps the weights of the best validation epoch. Using a smaller learning rate for the pretrained block than for the new head adapts the good pretrained weights gently instead of destroying them.
 
-- Python
-- PyTorch
-- Torchvision
-- ResNet-18
-- Transfer Learning
-- NumPy
-- Matplotlib
-- Scikit-learn
-- Kaggle Notebooks
+### Results
 
-## Methodology
+| Metric | Value |
+|---|---|
+| Feature extraction, validation accuracy | 0.901 |
+| Fine-tuning, validation accuracy | 0.931 (+3.04 points) |
+| **Test accuracy** | **0.936** (2,809 of 3,000 correct) |
+| Macro-average F1 | 0.937 |
 
-### 1. Data Loading and Preprocessing
+**Per-class test results**
 
-Images are loaded using PyTorch's `ImageFolder`. Preprocessing includes resizing, tensor conversion, normalization, and data augmentation for training images.
+| Class | Precision | Recall | F1 |
+|---|---|---|---|
+| buildings | 0.954 | 0.908 | 0.931 |
+| forest | 0.996 | 0.987 | 0.992 |
+| glacier | 0.920 | 0.870 | 0.894 |
+| mountain | 0.883 | 0.920 | 0.901 |
+| sea | 0.947 | 0.980 | 0.963 |
+| street | 0.930 | 0.958 | 0.944 |
 
-### 2. Feature Extraction
+**Learning curves** (dashed line = start of fine-tuning)
 
-A pretrained ResNet-18 model with ImageNet weights is used. The pretrained layers are frozen, and the final fully connected layer is replaced with a new layer for six-class classification.
+![Learning curves](images/learning_curves.png)
 
-Only the final classification layer is trained for 3 epochs.
+Both losses fall during feature extraction. Fine-tuning gives a further drop, and at epoch 6 validation loss starts to rise while training loss keeps falling, an early sign of overfitting. The best validation epoch is therefore kept.
 
-**Final Validation Accuracy: 92.55%**
+**Confusion matrix (test set)**
 
-### 3. Fine-Tuning
+![Confusion matrix](images/confusion_matrix.png)
 
-The `layer4` block and final classification layer are trained for 3 additional epochs, allowing the model to adapt its higher-level features to the scene classification task.
+### Error Analysis
+- The largest confusion is **glacier ↔ mountain** (57 glaciers predicted as mountain and 31 mountains predicted as glacier, 88 of the 191 test errors). Snow-covered rocky peaks appear in both classes.
+- The second largest is **buildings ↔ street** (34 + 17 = 51 errors).
+- These two pairs account for about 73% of all errors.
+- Most inspected errors are **not clear model failures**: many photos labelled "buildings" show shop fronts with cars and a road, and the model predicted "street" with up to 0.99 confidence. These images are genuinely ambiguous or arguably mislabelled, so remaining errors at this accuracy level are mostly a label-quality issue rather than a model-capacity issue.
 
-**Final Validation Accuracy: 93.30%**
+**Error gallery** (first eight test errors, with true label, predicted label, and confidence)
 
-### 4. Model Evaluation
+![Error gallery](images/error_gallery.png)
 
-The final model is evaluated using:
+### Key Takeaways
+- Training only **3,078 of 11.2 million parameters** already gives about 90% accuracy, because the pretrained layers provide general features (edges, textures, parts).
+- Fine-tuning the last block with a smaller learning rate adds about 3 accuracy points.
+- Validation is used for all choices (best epoch, comparing strategies); the test set is touched once.
+- Augmentation is applied to the training set only; evaluation always uses the plain transform.
 
-- Test accuracy
-- Test loss
-- Classification report
-- Confusion matrix
-- Incorrectly classified image visualization
-- Softmax probabilities
+---
 
-## Results
+## Week 6 Proposal: Malaria Detection from Blood-Cell Images
 
-### Model Performance
+**Problem.** Malaria is diagnosed in the field mainly by examining stained blood smears under a microscope, which is slow and depends on a trained expert, and a missed infection can have serious consequences for the patient. An image classifier that screens single blood-cell images as **parasitized** or **uninfected** could support laboratory technicians and health workers by flagging suspicious cells quickly and consistently, especially where trained microscopists are scarce.
 
-| Metric | Result |
-|---|---:|
-| Feature Extraction Validation Accuracy | 92.55% |
-| Fine-Tuning Validation Accuracy | 93.30% |
-| Test Accuracy (reported) | 93.03% |
-| Test Loss (reported) | 0.2016 |
+**Dataset.** I will use the Kaggle "Cell Images for Detecting Malaria" dataset, which comes from the US National Institutes of Health: https://www.kaggle.com/datasets/iarunava/cell-images-for-detecting-malaria. It contains **27,558 segmented cell images in 2 classes** (13,779 parasitized and 13,779 uninfected), taken from thin blood-smear slides. The data is balanced, and the image sizes are not uniform, so all images will be resized to 224 × 224. The data is released by the NIH as public-domain data; I will still confirm the exact license terms on the Kaggle page before use.
 
-*Note: Confirm the reported test metrics by rerunning evaluation with the correctly configured six-class test dataset.*
+**Approach.** I will reuse the Week 5 pipeline: ImageNet-normalised inputs, a train / validation / test split with augmentation on the training set only, ResNet-18 feature extraction followed by fine-tuning of `layer4` with two learning rates, and a single final evaluation on a held-out test set. Because this is a medical screening task, I will report **recall (sensitivity) for the parasitized class** and the number of false negatives in addition to accuracy, and I will study the misclassified cells. Augmentations will be chosen to suit microscope images (flips and rotations are safe because cells have no fixed orientation, unlike the scene photos in Week 5).
 
-### Performance Comparison
+**Limitations to discuss.** The images are pre-segmented single cells from a curated set, so real full-slide smears with artefacts and noise may be harder, and results on this dataset should not be taken as clinical performance.
 
-Fine-tuning increased validation accuracy from **92.55% to 93.30%**, an improvement of approximately **0.75 percentage points**.
+---
 
-This suggests that adapting the deeper ResNet-18 layer helped the model learn features more suitable for scene classification.
+## How to Reproduce
+1. Create a Kaggle notebook, add the **Intel Image Classification** dataset (`puneet6060/intel-image-classification`), and set **Accelerator = GPU T4** and **Internet = On**.
+2. Run `Week5_Transfer_Learning_Complete.ipynb` from top to bottom (about 40 s per epoch on a T4).
+3. To reload the saved model:
+   ```python
+   import torch, torch.nn as nn
+   from torchvision import models
+   model = models.resnet18()
+   model.fc = nn.Linear(512, 6)          # recreate the 6-class head first
+   model.load_state_dict(torch.load('resnet18_intel.pt', map_location='cpu'))
+   model.eval()
+   ```
 
-## Key Insights
+## Tech Stack
+Python, PyTorch, torchvision, scikit-learn, NumPy, Matplotlib, Kaggle GPU (Tesla T4).
 
-- **Transfer learning is effective:** Pretrained ResNet-18 achieved strong validation accuracy without training the entire network from scratch.
-- **Fine-tuning improved performance:** Validation accuracy increased by approximately 0.75 percentage points after fine-tuning.
-- **Pretrained features are useful:** ImageNet-trained features provide a strong starting point for classifying natural scenes.
-- **Evaluation matters:** Accuracy alone does not explain every model error, so the confusion matrix and classification report provide additional insights.
-- **Incorrect predictions are informative:** Reviewing misclassified images can help identify visually similar classes and areas for improvement.
+## Repository
+https://github.com/anderianisar/image-classification-transfer-learning
 
-## Visualizations
-
-The notebook includes:
-
-- Training and validation accuracy curves
-- Training and validation loss curves
-- Confusion matrix
-- Incorrectly classified images
-- Predicted class labels and softmax probabilities
-
-## How to Run the Project
-
-1. Open the notebook in Kaggle.
-2. Add the Intel Image Classification dataset.
-3. Verify the training and test directory paths.
-4. Run the data preprocessing and data loader cells.
-5. Train the feature extraction model for 3 epochs.
-6. Fine-tune `layer4` for 3 epochs.
-7. Evaluate the model and generate the visualizations.
-
-### Required Libraries
-
-```bash
-pip install torch torchvision scikit-learn matplotlib numpy
-```
-
-## Conclusion
-
-This project demonstrates the use of ResNet-18 transfer learning for six-class scene image classification. Feature extraction achieved 92.55% validation accuracy, while fine-tuning increased it to 93.30%.
-
-The results highlight the value of pretrained CNNs, fine-tuning, and comprehensive evaluation in developing image classification models.
-
-## Author
-
-**Anderia Nisar**
-
-Bachelor's in Electronics
-
-## Acknowledgment
-
-Completed as part of a deep learning lab focused on image classification and transfer learning.
 
 
 
